@@ -9,8 +9,9 @@ delivery (via msmtp), Markdown export, and several opt-in extras: issue
 tracking, release tracking, PR quality metrics, stale-PR detection, and
 first-time-contributor tracking.
 
-Inputs:  GitHub organization or username, optional GitHub token (env var or
-         --token), optional local config file for saved targets/email settings.
+Inputs:  GitHub organization or username, optional GitHub token (GITHUB_TOKEN
+         env var or --token), optional local config file for saved
+         targets/email settings.
 Outputs: Console report, optional Markdown file, optional email.
 """
 

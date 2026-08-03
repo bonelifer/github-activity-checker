@@ -39,11 +39,20 @@ cd github-activity-checker
 pip install -r requirements.txt
 ```
 
-Set your token as an environment variable (recommended over `-t/--token` on
-the command line, which is visible in shell history and process listings):
+Set your token as the `GITHUB_TOKEN` environment variable (recommended over
+`-t/--token` on the command line, which is visible in shell history and
+process listings):
 
 ```bash
 export GITHUB_TOKEN=your_token_here
+```
+
+That only lasts for the current shell session. To make it persist, add it to
+your `~/.bashrc` (or `~/.zshrc` if you use zsh) and reload it:
+
+```bash
+echo 'export GITHUB_TOKEN=your_token_here' >> ~/.bashrc
+source ~/.bashrc
 ```
 
 ## Usage
