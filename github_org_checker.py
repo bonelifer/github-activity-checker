@@ -650,9 +650,24 @@ class GitHubOrgChecker:
 
         return all_data
 
+    def get_account_type(self) -> str:
+        """Probe whether org_name is a GitHub organization or personal user account.
+
+        /users/{name} works for both account types, unlike /orgs/{name}/repos
+        which 404s for personal accounts, so this determines which repos
+        endpoint to use. Cached after the first call. Defaults to
+        'Organization' if the probe fails, so a genuinely nonexistent account
+        still surfaces a normal 404 from the repos call.
+        """
+        if not hasattr(self, '_account_type'):
+            response = requests.get(f"{self.base_url}/users/{self.org_name}", headers=self.headers)
+            self._account_type = response.json().get('type', 'Organization') if response.status_code == 200 else 'Organization'
+        return self._account_type
+
     def get_repositories(self) -> List[Dict]:
-        """Get all repositories in the organization"""
-        url = f"{self.base_url}/orgs/{self.org_name}/repos"
+        """Get all repositories for the organization or user account"""
+        endpoint = 'users' if self.get_account_type() == 'User' else 'orgs'
+        url = f"{self.base_url}/{endpoint}/{self.org_name}/repos"
         params = {'sort': 'updated', 'direction': 'desc'}
         return self._make_request(url, params)
 
@@ -940,7 +955,8 @@ class GitHubOrgChecker:
 
     def check_activity(self) -> Dict:
         """Main method to check all activity"""
-        print(f"🔍 Checking organization: {self.org_name}")
+        account_type = self.get_account_type()
+        print(f"🔍 Checking {'user' if account_type == 'User' else 'organization'}: {self.org_name}")
         print(f"📅 Period: {self.period_name}")
         print(f"⏰ From: {self.since_date.strftime('%Y-%m-%d %H:%M:%S')} UTC")
         print(f"⏰ To:   {self.until_date.strftime('%Y-%m-%d %H:%M:%S')} UTC")
@@ -1523,7 +1539,7 @@ Examples:
                          help='Include the saved BCC addresses (from --configure-email --email-bcc) on this send')
 
     # Organization argument (optional if default exists)
-    parser.add_argument('organization', nargs='?', help='GitHub organization name (optional if default configured)')
+    parser.add_argument('organization', nargs='?', help='GitHub organization or username (optional if default configured)')
 
     # Mode selection
     mode_group = parser.add_mutually_exclusive_group()
