@@ -233,8 +233,8 @@ class EmailSender:
             config: Email config dict (falls back to the saved config file).
             use_bcc: If True, also deliver to any BCC addresses saved in the
                 config. BCC addresses are passed only as extra msmtp envelope
-                recipients — never added to a message header — so they stay
-                genuinely blind to the To/Cc recipients.
+                recipients, never added to a message header, so they stay
+                blind to the To/Cc recipients.
         """
         if not config:
             config = ConfigManager.load_email_config()
@@ -252,7 +252,7 @@ class EmailSender:
         msg['Subject'] = f"{config.get('subject_prefix', '[GitHub Activity]')} {subject}"
         msg['From'] = config['from']
         msg['To'] = ', '.join(config['to'])
-        # Deliberately no 'Bcc' header is set here — BCC recipients are only
+        # Deliberately no 'Bcc' header is set here: BCC recipients are only
         # ever added as extra msmtp command-line (envelope) recipients below,
         # so they remain invisible to everyone else on the message.
         msg['Date'] = email.utils.formatdate(localtime=True)
@@ -275,10 +275,10 @@ class EmailSender:
                 temp_file = f.name
 
             # Build msmtp command with recipients. BCC addresses are appended
-            # here as extra envelope recipients only — msmtp delivers to
+            # here as extra envelope recipients only: msmtp delivers to
             # whatever addresses are passed on the command line regardless of
-            # what the message headers say, so this is what actually makes
-            # them blind (no corresponding header was set above).
+            # what the message headers say, so this is what makes them blind
+            # (no corresponding header was set above).
             cmd = ['msmtp']
             for recipient in config['to']:
                 cmd.append(recipient)

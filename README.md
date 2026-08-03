@@ -1,16 +1,16 @@
 # github-activity-checker
 
 A command-line tool that checks a GitHub organization or personal user
-account for recent activity — commits, pull requests, new repositories —
-and can also track issues, releases, PR quality metrics, stale PRs, and
+account for recent activity: commits, pull requests, and new repositories.
+It can also track issues, releases, PR quality metrics, stale PRs, and
 first-time contributors. Reports can be printed to the console, exported to
 Markdown, or emailed via `msmtp`.
 
 ## Features
 
 - Daily, weekly, monthly, or custom (`N`-day) reporting windows
-- Works against both GitHub organizations and personal user accounts —
-  automatically detected, no separate flag needed
+- Works against both GitHub organizations and personal user accounts,
+  detected automatically with no separate flag needed
 - Saved targets with a default, so you don't have to pass the org/username
   every run
 - Optional extras (each opt-in, since each adds extra GitHub API calls):
@@ -28,7 +28,7 @@ Markdown, or emailed via `msmtp`.
 
 - Python 3.9+
 - [`msmtp`](https://marlam.de/msmtp/) if you want email delivery
-- A GitHub personal access token is optional but strongly recommended —
+- A GitHub personal access token is optional but strongly recommended;
   unauthenticated requests are capped at 60/hour
 
 ## Installation
@@ -131,7 +131,7 @@ Mutually exclusive; defaults to `--weekly` if none is given.
 
 ### Optional Extras
 
-Each adds extra GitHub API calls — enable only what you need.
+Each adds extra GitHub API calls, so enable only what you need.
 
 | Flag | Description |
 |------|-------------|
