@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# Virtual environments
+.venv/
+venv/
+
+# Generated reports
+github_activity_*.md
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
