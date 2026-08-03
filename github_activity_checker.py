@@ -12,6 +12,8 @@ first-time-contributor tracking.
 Inputs:  GitHub organization or username, optional GitHub token (GITHUB_TOKEN
          env var or --token), optional local config file for saved
          targets/email settings.
+         To persist GITHUB_TOKEN across shell sessions:
+             echo 'export GITHUB_TOKEN=your_token_here' >> ~/.bashrc && source ~/.bashrc
 Outputs: Console report, optional Markdown file, optional email.
 """
 
