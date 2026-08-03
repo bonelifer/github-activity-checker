@@ -17,3 +17,6 @@ github_activity_*.md
 .vscode/
 .idea/
 .DS_Store
+
+# Temporary local scripts
+migrate_config.py
