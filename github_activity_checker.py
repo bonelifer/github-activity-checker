@@ -1,15 +1,17 @@
 #!/usr/bin/env python3
 """
-GitHub Organization Activity Checker
+GitHub Activity Checker
 
 Checks for recent repositories, commits, pull requests, issues, and releases
-in a GitHub organization. Supports daily, weekly, monthly, and custom
-reporting windows, with local config, email delivery (via msmtp), Markdown
-export, and several opt-in extras: issue tracking, release tracking, PR
-quality metrics, stale-PR detection, and first-time-contributor tracking.
+belonging to a GitHub organization or personal user account. Supports daily,
+weekly, monthly, and custom reporting windows, with local config, email
+delivery (via msmtp), Markdown export, and several opt-in extras: issue
+tracking, release tracking, PR quality metrics, stale-PR detection, and
+first-time-contributor tracking.
 
-Inputs:  GitHub organization name, optional GitHub token (env var or --token),
-         optional local config file for saved organizations/email settings.
+Inputs:  GitHub organization or username, optional GitHub token (GITHUB_TOKEN
+         env var or --token), optional local config file for saved
+         targets/email settings.
 Outputs: Console report, optional Markdown file, optional email.
 """
 
@@ -32,10 +34,10 @@ from dateutil import parser as date_parser
 
 
 class ConfigManager:
-    """Manages organization configuration, email settings, and contributor history files."""
+    """Manages target (org/user) configuration, email settings, and contributor history files."""
 
-    CONFIG_DIR = Path.home() / '.github-org-checker'
-    CONFIG_FILE = CONFIG_DIR / 'organizations.json'
+    CONFIG_DIR = Path.home() / '.github-activity-checker'
+    CONFIG_FILE = CONFIG_DIR / 'targets.json'
     EMAIL_CONFIG_FILE = CONFIG_DIR / 'email.json'
     CONTRIBUTORS_DIR = CONFIG_DIR / 'contributors'
 
@@ -46,82 +48,82 @@ class ConfigManager:
 
     @classmethod
     def load_config(cls) -> Dict:
-        """Load organizations from the config file."""
+        """Load targets from the config file."""
         cls.ensure_config_dir()
 
         if not cls.CONFIG_FILE.exists():
-            return {'organizations': [], 'default_org': None}
+            return {'targets': [], 'default_target': None}
 
         try:
             with open(cls.CONFIG_FILE, 'r') as f:
                 return json.load(f)
         except (json.JSONDecodeError, FileNotFoundError):
-            return {'organizations': [], 'default_org': None}
+            return {'targets': [], 'default_target': None}
 
     @classmethod
     def save_config(cls, config: Dict):
-        """Save organizations to the config file."""
+        """Save targets to the config file."""
         cls.ensure_config_dir()
 
         with open(cls.CONFIG_FILE, 'w') as f:
             json.dump(config, f, indent=2)
 
     @classmethod
-    def add_organization(cls, org_name: str, set_as_default: bool = False):
-        """Add an organization to the config."""
+    def add_target(cls, target_name: str, set_as_default: bool = False):
+        """Add a target (org or user) to the config."""
         config = cls.load_config()
 
-        if org_name not in config['organizations']:
-            config['organizations'].append(org_name)
+        if target_name not in config['targets']:
+            config['targets'].append(target_name)
 
-        if set_as_default or (config['default_org'] is None and len(config['organizations']) == 1):
-            config['default_org'] = org_name
+        if set_as_default or (config['default_target'] is None and len(config['targets']) == 1):
+            config['default_target'] = target_name
 
         cls.save_config(config)
-        print(f"✅ Added organization: {org_name}")
-        if config['default_org'] == org_name:
-            print(f"   Set as default organization")
+        print(f"✅ Added target: {target_name}")
+        if config['default_target'] == target_name:
+            print(f"   Set as default target")
 
     @classmethod
-    def remove_organization(cls, org_name: str):
-        """Remove an organization from the config."""
+    def remove_target(cls, target_name: str):
+        """Remove a target (org or user) from the config."""
         config = cls.load_config()
 
-        if org_name in config['organizations']:
-            config['organizations'].remove(org_name)
+        if target_name in config['targets']:
+            config['targets'].remove(target_name)
 
-            if config['default_org'] == org_name:
-                config['default_org'] = config['organizations'][0] if config['organizations'] else None
+            if config['default_target'] == target_name:
+                config['default_target'] = config['targets'][0] if config['targets'] else None
 
             cls.save_config(config)
-            print(f"✅ Removed organization: {org_name}")
+            print(f"✅ Removed target: {target_name}")
         else:
-            print(f"⚠️  Organization not found: {org_name}")
+            print(f"⚠️  Target not found: {target_name}")
 
     @classmethod
-    def list_organizations(cls) -> List[str]:
-        """List all configured organizations."""
+    def list_targets(cls) -> List[str]:
+        """List all configured targets."""
         config = cls.load_config()
-        return config.get('organizations', [])
+        return config.get('targets', [])
 
     @classmethod
-    def get_default_organization(cls) -> Optional[str]:
-        """Get the default organization."""
+    def get_default_target(cls) -> Optional[str]:
+        """Get the default target."""
         config = cls.load_config()
-        return config.get('default_org')
+        return config.get('default_target')
 
     @classmethod
-    def set_default_organization(cls, org_name: str):
-        """Set the default organization."""
+    def set_default_target(cls, target_name: str):
+        """Set the default target."""
         config = cls.load_config()
 
-        if org_name not in config['organizations']:
-            print(f"❌ Organization '{org_name}' not found in config. Add it first with: --add-org {org_name}")
+        if target_name not in config['targets']:
+            print(f"❌ Target '{target_name}' not found in config. Add it first with: --add-target {target_name}")
             return False
 
-        config['default_org'] = org_name
+        config['default_target'] = target_name
         cls.save_config(config)
-        print(f"✅ Default organization set to: {org_name}")
+        print(f"✅ Default target set to: {target_name}")
         return True
 
     @classmethod
@@ -185,16 +187,16 @@ class ConfigManager:
         return True
 
     @classmethod
-    def _contributors_file(cls, org_name: str) -> Path:
-        """Return the path to the seen-contributors history file for an organization."""
+    def _contributors_file(cls, target_name: str) -> Path:
+        """Return the path to the seen-contributors history file for a target."""
         cls.CONTRIBUTORS_DIR.mkdir(parents=True, exist_ok=True)
-        safe_name = org_name.replace('/', '_')
+        safe_name = target_name.replace('/', '_')
         return cls.CONTRIBUTORS_DIR / f'{safe_name}.json'
 
     @classmethod
-    def load_seen_contributors(cls, org_name: str) -> set:
-        """Load the set of contributor names/logins previously seen for an organization."""
-        path = cls._contributors_file(org_name)
+    def load_seen_contributors(cls, target_name: str) -> set:
+        """Load the set of contributor names/logins previously seen for a target."""
+        path = cls._contributors_file(target_name)
 
         if not path.exists():
             return set()
@@ -206,9 +208,9 @@ class ConfigManager:
             return set()
 
     @classmethod
-    def save_seen_contributors(cls, org_name: str, contributors: set):
-        """Persist the updated set of seen contributors for an organization."""
-        path = cls._contributors_file(org_name)
+    def save_seen_contributors(cls, target_name: str, contributors: set):
+        """Persist the updated set of seen contributors for a target."""
+        path = cls._contributors_file(target_name)
 
         with open(path, 'w') as f:
             json.dump(sorted(contributors), f, indent=2)
@@ -348,7 +350,7 @@ class EmailSender:
         </head>
         <body>
             <div class="container">
-                <h1>📊 {report['mode'].upper()} Activity Report: {report['organization']}</h1>
+                <h1>📊 {report['mode'].upper()} Activity Report: {report['target']}</h1>
                 <p><strong>Period:</strong> {report['period_name']}<br>
                 <strong>From:</strong> {datetime.fromisoformat(report['since_date']).strftime('%Y-%m-%d %H:%M:%S')} UTC<br>
                 <strong>To:</strong> {datetime.fromisoformat(report['until_date']).strftime('%Y-%m-%d %H:%M:%S')} UTC</p>
@@ -533,12 +535,12 @@ def pr_metrics_summary(pr_metrics: List[Dict]) -> Dict:
     }
 
 
-class GitHubOrgChecker:
-    """Fetches and summarizes GitHub organization activity over a configurable window."""
+class GitHubActivityChecker:
+    """Fetches and summarizes GitHub activity for an organization or user over a configurable window."""
 
     def __init__(
         self,
-        org_name: str,
+        target: str,
         token: str = None,
         mode: str = 'weekly',
         custom_days: int = None,
@@ -552,7 +554,7 @@ class GitHubOrgChecker:
         Initialize the checker with a specific mode and optional extras.
 
         Args:
-            org_name: GitHub organization name.
+            target: GitHub organization name or username.
             token: GitHub personal access token (falls back to GITHUB_TOKEN env var).
             mode: 'daily', 'weekly', 'monthly', or 'custom'.
             custom_days: Number of days for custom mode.
@@ -565,7 +567,7 @@ class GitHubOrgChecker:
             track_new_contributors: Diff this run's contributors against a
                 locally persisted history file and flag first-timers.
         """
-        self.org_name = org_name
+        self.target = target
         self.token = token or os.getenv('GITHUB_TOKEN')
         self.mode = mode
         self.base_url = "https://api.github.com"
@@ -651,7 +653,7 @@ class GitHubOrgChecker:
         return all_data
 
     def get_account_type(self) -> str:
-        """Probe whether org_name is a GitHub organization or personal user account.
+        """Probe whether target is a GitHub organization or personal user account.
 
         /users/{name} works for both account types, unlike /orgs/{name}/repos
         which 404s for personal accounts, so this determines which repos
@@ -660,14 +662,14 @@ class GitHubOrgChecker:
         still surfaces a normal 404 from the repos call.
         """
         if not hasattr(self, '_account_type'):
-            response = requests.get(f"{self.base_url}/users/{self.org_name}", headers=self.headers)
+            response = requests.get(f"{self.base_url}/users/{self.target}", headers=self.headers)
             self._account_type = response.json().get('type', 'Organization') if response.status_code == 200 else 'Organization'
         return self._account_type
 
     def get_repositories(self) -> List[Dict]:
-        """Get all repositories for the organization or user account"""
+        """Get all repositories for the target organization or user account"""
         endpoint = 'users' if self.get_account_type() == 'User' else 'orgs'
-        url = f"{self.base_url}/{endpoint}/{self.org_name}/repos"
+        url = f"{self.base_url}/{endpoint}/{self.target}/repos"
         params = {'sort': 'updated', 'direction': 'desc'}
         return self._make_request(url, params)
 
@@ -956,7 +958,7 @@ class GitHubOrgChecker:
     def check_activity(self) -> Dict:
         """Main method to check all activity"""
         account_type = self.get_account_type()
-        print(f"🔍 Checking {'user' if account_type == 'User' else 'organization'}: {self.org_name}")
+        print(f"🔍 Checking {'user' if account_type == 'User' else 'organization'}: {self.target}")
         print(f"📅 Period: {self.period_name}")
         print(f"⏰ From: {self.since_date.strftime('%Y-%m-%d %H:%M:%S')} UTC")
         print(f"⏰ To:   {self.until_date.strftime('%Y-%m-%d %H:%M:%S')} UTC")
@@ -985,7 +987,7 @@ class GitHubOrgChecker:
 
         # Initialize activity report
         activity_report = {
-            'organization': self.org_name,
+            'target': self.target,
             'mode': self.mode,
             'period_name': self.period_name,
             'since_date': self.since_date.isoformat(),
@@ -1059,9 +1061,9 @@ class GitHubOrgChecker:
 
         if self.track_new_contributors:
             current_contributors = set(activity_report['summary']['unique_contributors']) | set(activity_report['pr_contributors'].keys())
-            previously_seen = ConfigManager.load_seen_contributors(self.org_name)
+            previously_seen = ConfigManager.load_seen_contributors(self.target)
             activity_report['first_time_contributors'] = sorted(current_contributors - previously_seen)
-            ConfigManager.save_seen_contributors(self.org_name, previously_seen | current_contributors)
+            ConfigManager.save_seen_contributors(self.target, previously_seen | current_contributors)
 
         # Convert set to list for JSON serialization
         activity_report['summary']['unique_contributors'] = list(activity_report['summary']['unique_contributors'])
@@ -1083,17 +1085,17 @@ class GitHubOrgChecker:
 
         if self.mode == 'daily':
             date_str = datetime.fromisoformat(report['since_date']).strftime('%Y-%m-%d')
-            print(f"{icon} DAILY ACTIVITY REPORT - {report['organization']} - {date_str}")
+            print(f"{icon} DAILY ACTIVITY REPORT - {report['target']} - {date_str}")
         elif self.mode == 'weekly':
             start = datetime.fromisoformat(report['since_date']).strftime('%Y-%m-%d')
             end = datetime.fromisoformat(report['until_date']).strftime('%Y-%m-%d')
-            print(f"{icon} WEEKLY ACTIVITY REPORT - {report['organization']} ({start} to {end})")
+            print(f"{icon} WEEKLY ACTIVITY REPORT - {report['target']} ({start} to {end})")
         elif self.mode == 'monthly':
             start = datetime.fromisoformat(report['since_date']).strftime('%Y-%m-%d')
             end = datetime.fromisoformat(report['until_date']).strftime('%Y-%m-%d')
-            print(f"{icon} MONTHLY ACTIVITY REPORT - {report['organization']} ({start} to {end})")
+            print(f"{icon} MONTHLY ACTIVITY REPORT - {report['target']} ({start} to {end})")
         else:
-            print(f"{icon} ACTIVITY REPORT - {report['organization']} - {report['period_name']}")
+            print(f"{icon} ACTIVITY REPORT - {report['target']} - {report['period_name']}")
 
         print("="*80)
 
@@ -1264,12 +1266,12 @@ def export_to_markdown(report: Dict, filename: str = None) -> str:
     if not filename:
         mode_prefix = report['mode']
         date_str = datetime.now().strftime('%Y%m%d')
-        filename = f"github_activity_{report['organization']}_{mode_prefix}_{date_str}.md"
+        filename = f"github_activity_{report['target']}_{mode_prefix}_{date_str}.md"
 
     with open(filename, 'w', encoding='utf-8') as f:
         # Header
         mode_title = report['mode'].upper()
-        f.write(f"# {mode_title} GitHub Activity Report: {report['organization']}\n\n")
+        f.write(f"# {mode_title} GitHub Activity Report: {report['target']}\n\n")
 
         period_start = datetime.fromisoformat(report['since_date']).strftime('%Y-%m-%d %H:%M:%S')
         period_end = datetime.fromisoformat(report['until_date']).strftime('%Y-%m-%d %H:%M:%S')
@@ -1415,30 +1417,30 @@ def parse_comma_list(value: Optional[str]) -> List[str]:
     return [item.strip() for item in value.split(',') if item.strip()]
 
 
-def manage_organizations(args: argparse.Namespace) -> bool:
-    """Handle organization/email management commands.
+def manage_targets(args: argparse.Namespace) -> bool:
+    """Handle target (org/user)/email management commands.
 
     Returns True if a management command was handled (caller should stop),
     False if the caller should proceed to run the main checker.
     """
-    if args.add_org:
-        ConfigManager.add_organization(args.add_org, args.set_default)
-    elif args.remove_org:
-        ConfigManager.remove_organization(args.remove_org)
-    elif args.list_orgs:
-        orgs = ConfigManager.list_organizations()
-        default = ConfigManager.get_default_organization()
+    if args.add_target:
+        ConfigManager.add_target(args.add_target, args.set_default)
+    elif args.remove_target:
+        ConfigManager.remove_target(args.remove_target)
+    elif args.list_targets:
+        targets = ConfigManager.list_targets()
+        default = ConfigManager.get_default_target()
 
-        if not orgs:
-            print("📭 No organizations configured. Add one with: --add-org ORGANIZATION")
+        if not targets:
+            print("📭 No targets configured. Add one with: --add-target TARGET")
         else:
-            print("\n📋 Configured Organizations:")
-            for org in orgs:
-                default_marker = " (default)" if org == default else ""
-                print(f"  • {org}{default_marker}")
+            print("\n📋 Configured Targets:")
+            for target in targets:
+                default_marker = " (default)" if target == default else ""
+                print(f"  • {target}{default_marker}")
             print()
     elif args.set_default:
-        ConfigManager.set_default_organization(args.set_default)
+        ConfigManager.set_default_target(args.set_default)
     elif args.configure_email:
         if not args.email_to:
             print("❌ --email-to is required when using --configure-email.")
@@ -1472,15 +1474,15 @@ def manage_organizations(args: argparse.Namespace) -> bool:
 def build_arg_parser() -> argparse.ArgumentParser:
     """Construct the CLI argument parser."""
     parser = argparse.ArgumentParser(
-        description='Check GitHub organization activity with daily/weekly/monthly reports',
+        description='Check GitHub organization or user activity with daily/weekly/monthly reports',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
-Organization Management:
-  -a, --add-org ORG      Add organization to config
-  -r, --remove-org ORG   Remove organization from config
-  -l, --list-orgs        List all configured organizations
-  -s, --set-default ORG  Set default organization
-  -n, --no-default       Ignore default organization (require explicit org)
+Target Management (a target is an org or a personal username):
+  -a, --add-target TARGET      Add a target to config
+  -r, --remove-target TARGET   Remove a target from config
+  -l, --list-targets           List all configured targets
+  -s, --set-default TARGET     Set default target
+  -n, --no-default             Ignore default target (require explicit target)
 
 Email Configuration (requires msmtp):
   -c, --configure-email EMAIL  Configure email sender (e.g., user@example.com)
@@ -1501,29 +1503,29 @@ Optional extras (each adds extra API calls, use only what you need):
   -D, --stale-days DAYS    Flag open PRs idle for DAYS+ (1 extra call per repo)
   -N, --track-new-contributors
                           Flag first-time contributors using a local history
-                          file under ~/.github-org-checker/contributors/
+                          file under ~/.github-activity-checker/contributors/
 
 Examples:
   # Configure email
-  python github_org_checker.py -c reports@example.com -e admin@example.com,team@example.com -B audit@example.com
+  python github_activity_checker.py -c reports@example.com -e admin@example.com,team@example.com -B audit@example.com
 
   # Run and send email
-  python github_org_checker.py --weekly --send-email
+  python github_activity_checker.py --weekly --send-email
 
   # Run and send email, including the saved BCC list
-  python github_org_checker.py -w -S -b
+  python github_activity_checker.py -w -S -b
 
   # Weekly report with issues, releases, and stale-PR detection
-  python github_org_checker.py -w -i -I -D 14
+  python github_activity_checker.py -w -i -I -D 14
         """
     )
 
-    # Organization management arguments
-    parser.add_argument('-a', '--add-org', metavar='ORGANIZATION', help='Add organization to config')
-    parser.add_argument('-r', '--remove-org', metavar='ORGANIZATION', help='Remove organization from config')
-    parser.add_argument('-l', '--list-orgs', action='store_true', help='List configured organizations')
-    parser.add_argument('-s', '--set-default', metavar='ORGANIZATION', help='Set default organization')
-    parser.add_argument('-n', '--no-default', action='store_true', help='Ignore default organization')
+    # Target management arguments
+    parser.add_argument('-a', '--add-target', metavar='TARGET', help='Add a target (org or user) to config')
+    parser.add_argument('-r', '--remove-target', metavar='TARGET', help='Remove a target from config')
+    parser.add_argument('-l', '--list-targets', action='store_true', help='List configured targets')
+    parser.add_argument('-s', '--set-default', metavar='TARGET', help='Set default target')
+    parser.add_argument('-n', '--no-default', action='store_true', help='Ignore default target')
 
     # Email arguments
     parser.add_argument('-c', '--configure-email', metavar='EMAIL', help='Configure email sender address')
@@ -1538,8 +1540,8 @@ Examples:
     parser.add_argument('-b', '--bcc', action='store_true',
                          help='Include the saved BCC addresses (from --configure-email --email-bcc) on this send')
 
-    # Organization argument (optional if default exists)
-    parser.add_argument('organization', nargs='?', help='GitHub organization or username (optional if default configured)')
+    # Target argument (optional if default exists)
+    parser.add_argument('target', nargs='?', help='GitHub organization or username (optional if default configured)')
 
     # Mode selection
     mode_group = parser.add_mutually_exclusive_group()
@@ -1566,22 +1568,22 @@ Examples:
     return parser
 
 
-def resolve_organization(args: argparse.Namespace, parser: argparse.ArgumentParser) -> str:
-    """Determine which organization to run against, using the default if applicable."""
-    org_name = args.organization
+def resolve_target(args: argparse.Namespace, parser: argparse.ArgumentParser) -> str:
+    """Determine which target (org or user) to run against, using the default if applicable."""
+    target = args.target
 
-    if not org_name and not args.no_default:
-        org_name = ConfigManager.get_default_organization()
-        if org_name:
-            print(f"📌 Using default organization: {org_name}\n")
+    if not target and not args.no_default:
+        target = ConfigManager.get_default_target()
+        if target:
+            print(f"📌 Using default target: {target}\n")
 
-    if not org_name:
-        parser.error("Organization name required. Either:\n"
-                     "  • Pass as argument: script.py ORGNAME\n"
-                     "  • Set a default org: --add-org ORGNAME --set-default\n"
-                     "  • Use --no-default to bypass default org check")
+    if not target:
+        parser.error("Target (organization or username) required. Either:\n"
+                     "  • Pass as argument: script.py TARGET\n"
+                     "  • Set a default target: --add-target TARGET --set-default\n"
+                     "  • Use --no-default to bypass default target check")
 
-    return org_name
+    return target
 
 
 def resolve_mode(args: argparse.Namespace) -> (str, Optional[int]):
@@ -1600,7 +1602,7 @@ def resolve_mode(args: argparse.Namespace) -> (str, Optional[int]):
 def build_email_text_body(report: Dict, mode: str) -> str:
     """Build the plain-text email body for a report."""
     text_buffer = [
-        f"{mode.upper()} Activity Report: {report['organization']}\n",
+        f"{mode.upper()} Activity Report: {report['target']}\n",
         f"Period: {report['period_name']}",
         f"From: {datetime.fromisoformat(report['since_date']).strftime('%Y-%m-%d %H:%M:%S')} UTC",
         f"To: {datetime.fromisoformat(report['until_date']).strftime('%Y-%m-%d %H:%M:%S')} UTC",
@@ -1632,10 +1634,10 @@ def main():
     args = parser.parse_args()
 
     # Handle management commands first
-    if manage_organizations(args):
+    if manage_targets(args):
         return
 
-    org_name = resolve_organization(args, parser)
+    target = resolve_target(args, parser)
     mode, custom_days = resolve_mode(args)
 
     # Validate token
@@ -1650,8 +1652,8 @@ def main():
 
     # Create checker and run
     try:
-        checker = GitHubOrgChecker(
-            org_name=org_name,
+        checker = GitHubActivityChecker(
+            target=target,
             token=args.token,
             mode=mode,
             custom_days=custom_days,
@@ -1677,7 +1679,7 @@ def main():
             else:
                 text_body = build_email_text_body(report, mode)
                 html_body = EmailSender.generate_html_report(report)
-                subject = f"{report['organization']} - {mode.title()} Activity Report"
+                subject = f"{report['target']} - {mode.title()} Activity Report"
                 EmailSender.send_email(subject, text_body, html_body, email_config, use_bcc=args.bcc)
 
     except KeyboardInterrupt:

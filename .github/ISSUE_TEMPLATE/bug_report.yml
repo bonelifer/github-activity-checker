@@ -1,5 +1,5 @@
 name: Bug report
-description: Report a problem with github-org-checker
+description: Report a problem with github-activity-checker
 labels: ["bug"]
 body:
   - type: textarea
