@@ -129,6 +129,44 @@ class ConfigManager:
         return True
 
     @classmethod
+    def add_excluded_org(cls, target_name: str, org_login: str):
+        """Persist an org/owner login to always exclude from a target's repo list.
+
+        Useful for excluding specific repos an org target owns, or forks/
+        template repos an owner-affiliated personal target still turns up.
+        """
+        config = cls.load_config()
+        excluded = config.setdefault('excluded_orgs', {})
+        orgs = excluded.setdefault(target_name, [])
+
+        if org_login not in orgs:
+            orgs.append(org_login)
+            cls.save_config(config)
+        print(f"✅ Excluding org '{org_login}' from target '{target_name}'")
+
+    @classmethod
+    def remove_excluded_org(cls, target_name: str, org_login: str):
+        """Remove a previously excluded org/owner login for a target."""
+        config = cls.load_config()
+        excluded = config.get('excluded_orgs', {})
+        orgs = excluded.get(target_name, [])
+
+        if org_login in orgs:
+            orgs.remove(org_login)
+            if not orgs:
+                excluded.pop(target_name, None)
+            cls.save_config(config)
+            print(f"✅ No longer excluding org '{org_login}' from target '{target_name}'")
+        else:
+            print(f"⚠️  Org '{org_login}' was not excluded for target '{target_name}'")
+
+    @classmethod
+    def list_excluded_orgs(cls, target_name: str) -> List[str]:
+        """List org/owner logins excluded for a target."""
+        config = cls.load_config()
+        return config.get('excluded_orgs', {}).get(target_name, [])
+
+    @classmethod
     def load_email_config(cls) -> Dict:
         """Load email configuration."""
         cls.ensure_config_dir()
@@ -233,8 +271,8 @@ class EmailSender:
             config: Email config dict (falls back to the saved config file).
             use_bcc: If True, also deliver to any BCC addresses saved in the
                 config. BCC addresses are passed only as extra msmtp envelope
-                recipients, never added to a message header, so they stay
-                blind to the To/Cc recipients.
+                recipients — never added to a message header — so they stay
+                genuinely blind to the To/Cc recipients.
         """
         if not config:
             config = ConfigManager.load_email_config()
@@ -252,7 +290,7 @@ class EmailSender:
         msg['Subject'] = f"{config.get('subject_prefix', '[GitHub Activity]')} {subject}"
         msg['From'] = config['from']
         msg['To'] = ', '.join(config['to'])
-        # Deliberately no 'Bcc' header is set here: BCC recipients are only
+        # Deliberately no 'Bcc' header is set here — BCC recipients are only
         # ever added as extra msmtp command-line (envelope) recipients below,
         # so they remain invisible to everyone else on the message.
         msg['Date'] = email.utils.formatdate(localtime=True)
@@ -275,10 +313,10 @@ class EmailSender:
                 temp_file = f.name
 
             # Build msmtp command with recipients. BCC addresses are appended
-            # here as extra envelope recipients only: msmtp delivers to
+            # here as extra envelope recipients only — msmtp delivers to
             # whatever addresses are passed on the command line regardless of
-            # what the message headers say, so this is what makes them blind
-            # (no corresponding header was set above).
+            # what the message headers say, so this is what actually makes
+            # them blind (no corresponding header was set above).
             cmd = ['msmtp']
             for recipient in config['to']:
                 cmd.append(recipient)
@@ -668,12 +706,59 @@ class GitHubActivityChecker:
             self._account_type = response.json().get('type', 'Organization') if response.status_code == 200 else 'Organization'
         return self._account_type
 
+    def get_authenticated_login(self) -> Optional[str]:
+        """Return the login of the account that self.token belongs to, or None.
+
+        Returns None if no token is set or the lookup fails. Cached after the
+        first call.
+        """
+        if not self.token:
+            return None
+        if not hasattr(self, '_authenticated_login'):
+            response = requests.get(f"{self.base_url}/user", headers=self.headers)
+            self._authenticated_login = response.json().get('login') if response.status_code == 200 else None
+        return self._authenticated_login
+
     def get_repositories(self) -> List[Dict]:
-        """Get all repositories for the target organization or user account"""
-        endpoint = 'users' if self.get_account_type() == 'User' else 'orgs'
-        url = f"{self.base_url}/{endpoint}/{self.target}/repos"
-        params = {'sort': 'updated', 'direction': 'desc'}
-        return self._make_request(url, params)
+        """Get all repositories for the target organization or user account.
+
+        Organization repos already include private ones by default via
+        /orgs/{org}/repos, provided the token has access. Personal-user repos
+        are different: /users/{username}/repos always returns public repos
+        only, regardless of token. To include private repos for a personal
+        account, the authenticated-user endpoint /user/repos must be used
+        instead — but that only ever returns the token owner's own repos, so
+        it's only used here when the token actually belongs to the target
+        account. Otherwise this falls back to the public-only endpoint, since
+        GitHub has no way to list another user's private repos in bulk.
+
+        Only affiliation=owner is requested, so a personal target stays
+        scoped to repos that account actually owns — not repos under every
+        org it happens to be a member of or a collaborator on.
+        """
+        account_type = self.get_account_type()
+
+        if account_type == 'User' and self.token and \
+                (self.get_authenticated_login() or '').lower() == self.target.lower():
+            url = f"{self.base_url}/user/repos"
+            params = {
+                'sort': 'updated',
+                'direction': 'desc',
+                'visibility': 'all',
+                'affiliation': 'owner',
+            }
+        else:
+            endpoint = 'users' if account_type == 'User' else 'orgs'
+            url = f"{self.base_url}/{endpoint}/{self.target}/repos"
+            params = {'sort': 'updated', 'direction': 'desc'}
+
+        repos = self._make_request(url, params)
+
+        excluded_orgs = set(ConfigManager.list_excluded_orgs(self.target))
+        if excluded_orgs:
+            repos = [r for r in repos if r.get('owner', {}).get('login') not in excluded_orgs]
+
+        return repos
 
     def get_recent_repos(self, repos: List[Dict]) -> List[Dict]:
         """Filter repositories created within the date range"""
@@ -961,6 +1046,9 @@ class GitHubActivityChecker:
         """Main method to check all activity"""
         account_type = self.get_account_type()
         print(f"🔍 Checking {'user' if account_type == 'User' else 'organization'}: {self.target}")
+        if account_type == 'User' and self.token and \
+                (self.get_authenticated_login() or '').lower() == self.target.lower():
+            print("🔒 Token matches this user account — including private repositories")
         print(f"📅 Period: {self.period_name}")
         print(f"⏰ From: {self.since_date.strftime('%Y-%m-%d %H:%M:%S')} UTC")
         print(f"⏰ To:   {self.until_date.strftime('%Y-%m-%d %H:%M:%S')} UTC")
@@ -1473,6 +1561,37 @@ def manage_targets(args: argparse.Namespace) -> bool:
     return True
 
 
+def manage_org_exclusions(args: argparse.Namespace, target: str) -> bool:
+    """Handle --exclude-org/--include-org/--list-excluded-orgs for the resolved target.
+
+    Unlike manage_targets(), these act on the already-resolved target (the
+    positional argument or the configured default), so they run after
+    resolve_target() rather than before it.
+
+    Returns True if one of these commands ran (caller should stop), False if
+    the caller should proceed to run the main checker.
+    """
+    if args.exclude_org:
+        for org in parse_comma_list(args.exclude_org):
+            ConfigManager.add_excluded_org(target, org)
+    elif args.include_org:
+        for org in parse_comma_list(args.include_org):
+            ConfigManager.remove_excluded_org(target, org)
+    elif args.list_excluded_orgs:
+        excluded = ConfigManager.list_excluded_orgs(target)
+        if not excluded:
+            print(f"📭 No excluded orgs for target '{target}'.")
+        else:
+            print(f"\n🚫 Excluded orgs for target '{target}':")
+            for org in excluded:
+                print(f"  • {org}")
+            print()
+    else:
+        return False
+
+    return True
+
+
 def build_arg_parser() -> argparse.ArgumentParser:
     """Construct the CLI argument parser."""
     parser = argparse.ArgumentParser(
@@ -1485,6 +1604,14 @@ Target Management (a target is an org or a personal username):
   -l, --list-targets           List all configured targets
   -s, --set-default TARGET     Set default target
   -n, --no-default             Ignore default target (require explicit target)
+
+Org Exclusion (persisted per target, applies to the resolved target):
+  -X, --exclude-org ORG        Always exclude this org/owner's repos (comma-
+                              separated for multiple), e.g. -X phpbb. Useful
+                              when a personal target's repo list picks up
+                              orgs it's merely a member/collaborator of.
+      --include-org ORG        Remove an org/owner from the exclusion list
+      --list-excluded-orgs     List orgs excluded for the resolved target
 
 Email Configuration (requires msmtp):
   -c, --configure-email EMAIL  Configure email sender (e.g., user@example.com)
@@ -1519,6 +1646,9 @@ Examples:
 
   # Weekly report with issues, releases, and stale-PR detection
   python github_activity_checker.py -w -i -I -D 14
+
+  # Stop a personal target's report from including a big org you're a member of
+  python github_activity_checker.py bonelifer -X phpbb
         """
     )
 
@@ -1528,6 +1658,16 @@ Examples:
     parser.add_argument('-l', '--list-targets', action='store_true', help='List configured targets')
     parser.add_argument('-s', '--set-default', metavar='TARGET', help='Set default target')
     parser.add_argument('-n', '--no-default', action='store_true', help='Ignore default target')
+
+    # Org exclusion arguments (persisted per target)
+    parser.add_argument('-X', '--exclude-org', metavar='ORG',
+                         help='Persist an org/owner login (comma-separated for multiple) to always '
+                              'exclude from the resolved target\'s repo list, e.g. --exclude-org phpbb')
+    parser.add_argument('--include-org', metavar='ORG',
+                         help='Remove an org/owner login (comma-separated for multiple) from the '
+                              'resolved target\'s exclusion list')
+    parser.add_argument('--list-excluded-orgs', action='store_true',
+                         help='List orgs excluded for the resolved target')
 
     # Email arguments
     parser.add_argument('-c', '--configure-email', metavar='EMAIL', help='Configure email sender address')
@@ -1640,6 +1780,10 @@ def main():
         return
 
     target = resolve_target(args, parser)
+
+    if manage_org_exclusions(args, target):
+        return
+
     mode, custom_days = resolve_mode(args)
 
     # Validate token
