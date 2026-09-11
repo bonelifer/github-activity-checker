@@ -13,6 +13,12 @@ Markdown, or emailed via `msmtp`.
   detected automatically with no separate flag needed
 - Saved targets with a default, so you don't have to pass the org/username
   every run
+- When the token belongs to the personal-user target being checked, private
+  repositories are included automatically (an org target's private repos
+  are already included via the org repos endpoint, provided the token has
+  access)
+- Per-target org exclusion list, so a personal target's repo list can skip
+  orgs it's merely a member of or collaborator on (`-X, --exclude-org`)
 - Optional extras (each opt-in, since each adds extra GitHub API calls):
   - `-i, --include-issues` — issues opened/closed/still-open in the period
   - `-I, --include-releases` — new releases/tags published in the period
@@ -98,6 +104,17 @@ auto-detects which one it is.
 | `-l, --list-targets` | List all configured targets |
 | `-s, --set-default TARGET` | Set the default target |
 | `-n, --no-default` | Ignore the saved default target (require an explicit target argument) |
+
+### Org Exclusion
+
+Persisted per target, applies to the resolved target (positional argument
+or configured default).
+
+| Flag | Description |
+|------|-------------|
+| `-X, --exclude-org ORG` | Always exclude this org/owner's repos from the resolved target's repo list (comma-separated for multiple) |
+| `--include-org ORG` | Remove an org/owner from the exclusion list (comma-separated for multiple) |
+| `--list-excluded-orgs` | List orgs excluded for the resolved target |
 
 ### Report Mode
 
